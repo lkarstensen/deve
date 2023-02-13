@@ -18,7 +18,7 @@ class PLT2D(Visualisation):
         self,
         vessel_tree: VesselTree,
         intervention: Intervention,
-        target: Target,
+        target: Target = None,
         interim_targets: InterimTarget = None,
         dimension_to_omit="y",
     ) -> None:
@@ -41,10 +41,11 @@ class PLT2D(Visualisation):
         plt.show(block=False)
 
     def reset(self, episode_nr: int = 0) -> None:
-        if self._centerline_tree != self.vessel_tree.centerline_tree:
+        if self._centerline_tree != self.vessel_tree.branches:
             self._init_vessel_tree()
-            self._centerline_tree = self.vessel_tree.centerline_tree
-        self._init_targets()
+            self._centerline_tree = self.vessel_tree.branches
+        if self.target is not None:
+            self._init_targets()
         self.step()
 
     def close(self):
@@ -54,8 +55,14 @@ class PLT2D(Visualisation):
         if self.fig is None:
             self.fig, self.ax = plt.subplots()
         self.ax.clear()
-        self.ax.set_xlim(self.vessel_tree.low[0], self.vessel_tree.high[0])
-        self.ax.set_ylim(self.vessel_tree.low[2], self.vessel_tree.high[2])
+        self.ax.set_xlim(
+            self.vessel_tree.coordinate_space.low[0],
+            self.vessel_tree.coordinate_space.high[0],
+        )
+        self.ax.set_ylim(
+            self.vessel_tree.coordinate_space.low[2],
+            self.vessel_tree.coordinate_space.high[2],
+        )
 
         # self.ax = self.fig.gca()
         self.ax.set_aspect("equal")

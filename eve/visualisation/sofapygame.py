@@ -38,6 +38,8 @@ class SofaPygame(Visualisation):
         self.interim_target = interim_target or InterimTargetDummy()
         self.target = target
 
+        self.intervention.init_visual = True
+
         self.initial_orientation = None
         self._initialized = False
         self._centerline_tree = None

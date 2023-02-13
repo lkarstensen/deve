@@ -1,10 +1,12 @@
+# pylint: disable=no-member
 import numpy as np
 import eve
+import eve.simulation3d
+import eve.visualisation
 import pygame
-from eve.vesseltree import Vector
 from time import perf_counter
 
-vessel_tree = eve.vesseltree.AorticArch(rotate_z=20, rotate_x=-5, omit_y_axis=False)
+vessel_tree = eve.vesseltree.AorticArch(scale_xyzd=[1.0, 1.0, 1.5, 1.0], seed=15)
 device = eve.simulation3d.device.JWire(visu_edges_per_mm=0.5)
 device2 = eve.simulation3d.device.JWire(
     name="cath",
@@ -13,7 +15,7 @@ device2 = eve.simulation3d.device.JWire(
     straight_outer_diameter=1.2,
     tip_inner_diameter=1.0,
     straight_inner_diameter=1.0,
-    color=[1.0, 0.0, 0.0],
+    color=(1.0, 0.0, 0.0),
 )
 
 # device2 = eve.simulation3d.device.Simmons3Bends()
@@ -34,22 +36,20 @@ target_state = eve.observation.Target(target)
 target_state = eve.observation.wrapper.CoordinatesTo2D(target_state, dim_to_delete="y")
 # target_state = eve.state.wrapper.Normalize(target_state)
 rotation = eve.observation.Rotations(simulation)
-state = eve.observation.ObsDict([position, target_state, rotation])
+state = eve.observation.ObsDict(
+    {"tracking": position, "target": target_state, "rot": rotation}
+)
 
 target_reward = eve.reward.TargetReached(target, factor=1.0)
 # step_reward = eve.reward.Step(factor=-0.01)
 path_delta = eve.reward.PathLengthDelta(pathfinder, 0.01)
 reward = eve.reward.Combination([target_reward, path_delta])
 
-max_steps = eve.terminal.MaxSteps(200)
+max_steps = eve.truncation.MaxSteps(200)
 target_reached = eve.terminal.TargetReached(target)
-done = eve.terminal.Combination([max_steps, target_reached])
 
 visualisation = eve.visualisation.SofaPygame(simulation)
 
-randomizer = eve.vesseltreerandomizer.AorticArchRandom(
-    vessel_tree, intervention=simulation, mode="eval"
-)
 
 env = eve.Env(
     vessel_tree=vessel_tree,
@@ -59,10 +59,10 @@ env = eve.Env(
     success=success,
     observation=state,
     reward=reward,
-    terminal=done,
+    terminal=target_reached,
+    truncation=max_steps,
     visualisation=visualisation,
     pathfinder=pathfinder,
-    vessel_tree_randomizer=randomizer,
 )
 
 r_cum = 0.0
@@ -73,8 +73,8 @@ while True:
     start = perf_counter()
     trans = 0.0
     rot = 0.0
-    camera_trans = Vector(0.0, 0.0, 0.0)
-    camera_rot = Vector(0.0, 0.0, 0.0)
+    camera_trans = np.array((0.0, 0.0, 0.0))
+    camera_rot = np.array((0.0, 0.0, 0.0))
     zoom = 0
     pygame.event.get()
     keys_pressed = pygame.key.get_pressed()
@@ -103,14 +103,14 @@ while True:
         env.visualisation.rotate(lao_rao, cra_cau)
     else:
         if keys_pressed[pygame.K_w]:
-            camera_trans += Vector(0.0, 0.0, 200.0)
+            camera_trans += np.array((0.0, 0.0, 0.0))
         if keys_pressed[pygame.K_s]:
-            camera_trans -= Vector(0.0, 0.0, 200.0)
+            camera_trans -= np.array((0.0, 0.0, 0.0))
         if keys_pressed[pygame.K_a]:
-            camera_trans -= Vector(200.0, 0.0, 0.0)
+            camera_trans -= np.array((0.0, 0.0, 0.0))
         if keys_pressed[pygame.K_d]:
 
-            camera_trans = Vector(200.0, 0.0, 0.0)
+            camera_trans = np.array((0.0, 0.0, 0.0))
         env.visualisation.translate(camera_trans)
     if keys_pressed[pygame.K_e]:
         env.visualisation.zoom(1000)
@@ -123,7 +123,7 @@ while True:
 
     else:
         action = ((trans, rot), (0, 0))
-    s, r, d, i, success = env.step(intervention_action=action)
+    s, r, d, i, success = env.step(action=action)
 
     if keys_pressed[pygame.K_RETURN]:
         env.reset()

@@ -29,14 +29,7 @@ class Simulation2D(Intervention, ABC):
         tracking_low_custom: Tuple[float, float, float] = None,
         tracking_high_custom: Tuple[float, float, float] = None,
     ) -> None:
-        super().__init__(
-            vessel_tree,
-            image_frequency,
-            dt_simulation,
-            velocity_limits,
-            tracking_low_custom,
-            tracking_high_custom,
-        )
+        super().__init__(vessel_tree, image_frequency, dt_simulation, velocity_limits)
 
         self.devices = devices
         self.damping = damping
@@ -71,7 +64,7 @@ class Simulation2D(Intervention, ABC):
         return position
 
     def reset(self, episode_nr=0) -> None:
-        if self._last_centerline_tree != self.vessel_tree.centerline_tree:
+        if self._last_centerline_tree != self.vessel_tree.branches:
             if self._space is not None:
                 self._remove_segments_and_constraints()
                 self._remove_walls()
@@ -86,20 +79,18 @@ class Simulation2D(Intervention, ABC):
             )
             for wall in walls:
                 self._add_wall(wall)
-            self._last_centerline_tree = self.vessel_tree.centerline_tree
+            self._last_centerline_tree = self.vessel_tree.branches
 
-            ip_pos, ip_dir = calc_insertion_from_centerline(
-                self.vessel_tree.centerline_tree
-            )
+            ip_pos, ip_dir = calc_insertion_from_centerline(self.vessel_tree)
             if self.dimension_to_omit == "x":
-                ip_pos = np.array([ip_pos.y, ip_pos.z])
-                ip_dir = np.array([ip_dir.y, ip_dir.z])
+                ip_pos = np.array([ip_pos[1], ip_pos[2]])
+                ip_dir = np.array([ip_dir[1], ip_dir[2]])
             elif self.dimension_to_omit == "z":
-                ip_pos = np.array([ip_pos.x, ip_pos.y])
-                ip_dir = np.array([ip_dir.x, ip_dir.y])
+                ip_pos = np.array([ip_pos[0], ip_pos[1]])
+                ip_dir = np.array([ip_dir[0], ip_dir[1]])
             else:
-                ip_pos = np.array([ip_pos.x, ip_pos.z])
-                ip_dir = np.array([ip_dir.x, ip_dir.z])
+                ip_pos = np.array([ip_pos[0], ip_pos[2]])
+                ip_dir = np.array([ip_dir[0], ip_dir[2]])
             self.insertion_point = ip_pos
             self.insertion_direction = ip_dir
 

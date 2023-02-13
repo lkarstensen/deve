@@ -87,7 +87,8 @@ class SingleDevice(Simulation2D):
         return [self.device.diameter]
 
     def step(self, action: np.ndarray) -> None:
-        action = action.reshape(self.action_high.shape)
+        action = np.array(action)
+        action = action.reshape(self.action_space.shape)
         action = np.clip(action, -self.velocity_limits, self.velocity_limits)
         self._last_action = action
 

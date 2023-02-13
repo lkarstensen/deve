@@ -34,6 +34,8 @@ class Guidewire(Simulation3D):
 
         self.sofa_native_gui = sofa_native_gui
 
+        self.init_visual = False
+
         self._sofa_initialized = False
         self.sofa_initialized_2 = False
         self._loaded_mesh = None
@@ -160,12 +162,13 @@ class Guidewire(Simulation3D):
         self._load_plugins()
         self.root.gravity = [0.0, 0.0, 0.0]
         self.root.dt = self.dt_simulation
-        self._add_visual()
         self._basic_setup()
         self._add_vessel_tree(mesh_path=mesh_path)
         self._add_device(
             insertion_point=insertion_point, insertion_direction=insertion_direction
         )
+        if self.init_visual:
+            self._add_visual()
         self.logger.info("Sofa Initialized")
         if self.sofa_native_gui:
 
@@ -190,7 +193,53 @@ class Guidewire(Simulation3D):
         self.root.addObject("RequiredPlugin", name="SofaTopologyMapping")
 
     def _add_visual(self):
-        ...
+
+        self.vessel_object.addObject(
+            "OglModel",
+            src="@meshLoader",
+            color=[0.5, 1.0, 1.0, 0.3],
+        )
+        visu_node = self.root.addChild("Visu")
+        visu_node.addObject("MechanicalObject", name="Quads")
+        visu_node.addObject("QuadSetTopologyContainer", name="ContainerTube")
+        visu_node.addObject("QuadSetTopologyModifier", name="Modifier")
+        visu_node.addObject(
+            "QuadSetGeometryAlgorithms",
+            name="GeomAlgo",
+            template="Vec3d",
+        )
+        visu_node.addObject(
+            "Edge2QuadTopologicalMapping",
+            nbPointsOnEachCircle="10",
+            radius=self.device.radius,
+            flipNormals="true",
+            input="@../EdgeTopology/meshLines",
+            output="@ContainerTube",
+        )
+        visu_node.addObject(
+            "AdaptiveBeamMapping",
+            interpolation="@../BeamModel/BeamInterpolation",
+            name="VisuMap",
+            output="@Quads",
+            isMechanical="false",
+            input="@../BeamModel/DOFs",
+            useCurvAbs="1",
+            printLog="0",
+        )
+        visu_ogl = visu_node.addChild("VisuOgl")
+        visu_ogl.addObject(
+            "OglModel",
+            color=self.device.color,
+            quads="@../ContainerTube.quads",
+            src="@../ContainerTube",
+            material="texture Ambient 1 0.2 0.2 0.2 0.0 Diffuse 1 1.0 1.0 1.0 1.0 Specular 1 1.0 1.0 1.0 1.0 Emissive 0 0.15 0.05 0.05 0.0 Shininess 1 20",
+            name="Visual",
+        )
+        visu_ogl.addObject(
+            "IdentityMapping",
+            input="@../Quads",
+            output="@Visual",
+        )
 
     def _basic_setup(self):
         self.root.addObject("FreeMotionAnimationLoop")
@@ -237,11 +286,7 @@ class Guidewire(Simulation3D):
 
         vessel_object.addObject("TriangleCollisionModel", moving=False, simulated=False)
         vessel_object.addObject("LineCollisionModel", moving=False, simulated=False)
-        vessel_object.addObject(
-            "OglModel",
-            src="@meshLoader",
-            color=[0.5, 1.0, 1.0, 0.3],
-        )
+        self.vessel_object = vessel_object
 
     def _add_device(self, insertion_point, insertion_direction):
         topo_lines = self.root.addChild("EdgeTopology")
@@ -367,45 +412,3 @@ class Guidewire(Simulation3D):
         )
         beam_collis.addObject("LineCollisionModel", proximity=0.0)
         beam_collis.addObject("PointCollisionModel", proximity=0.0)
-
-        visu_node = self.root.addChild("Visu")
-        visu_node.addObject("MechanicalObject", name="Quads")
-        visu_node.addObject("QuadSetTopologyContainer", name="ContainerTube")
-        visu_node.addObject("QuadSetTopologyModifier", name="Modifier")
-        visu_node.addObject(
-            "QuadSetGeometryAlgorithms",
-            name="GeomAlgo",
-            template="Vec3d",
-        )
-        visu_node.addObject(
-            "Edge2QuadTopologicalMapping",
-            nbPointsOnEachCircle="10",
-            radius=self.device.radius,
-            flipNormals="true",
-            input="@../EdgeTopology/meshLines",
-            output="@ContainerTube",
-        )
-        visu_node.addObject(
-            "AdaptiveBeamMapping",
-            interpolation="@../BeamModel/BeamInterpolation",
-            name="VisuMap",
-            output="@Quads",
-            isMechanical="false",
-            input="@../BeamModel/DOFs",
-            useCurvAbs="1",
-            printLog="0",
-        )
-        visu_ogl = visu_node.addChild("VisuOgl")
-        visu_ogl.addObject(
-            "OglModel",
-            color=self.device.color,
-            quads="@../ContainerTube.quads",
-            src="@../ContainerTube",
-            material="texture Ambient 1 0.2 0.2 0.2 0.0 Diffuse 1 1.0 1.0 1.0 1.0 Specular 1 1.0 1.0 1.0 1.0 Emissive 0 0.15 0.05 0.05 0.0 Shininess 1 20",
-            name="Visual",
-        )
-        visu_ogl.addObject(
-            "IdentityMapping",
-            input="@../Quads",
-            output="@Visual",
-        )

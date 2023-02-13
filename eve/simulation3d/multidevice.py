@@ -37,6 +37,8 @@ class MultiDevice(Simulation3D):
         self.instruments_combined = []
         self.device_trackings = []
 
+        self.init_visual = False
+
     @property
     def tracking_ground_truth(self) -> np.ndarray:
         tracking = self.instruments_combined.DOFs.position.value[:, 0:3][::-1]
@@ -89,13 +91,12 @@ class MultiDevice(Simulation3D):
     def step(self, action: np.ndarray) -> None:
         action = np.array(action).reshape(self.action_space.shape)
         action = np.clip(action, -self.velocity_limits, self.velocity_limits)
-        inserted_lengths = self.device_lengths_inserted
+        inserted_lengths = np.array(list(self.device_lengths_inserted.values()))
 
         mask = np.where(inserted_lengths + action[:, 0] / self.image_frequency <= 0.0)
         action[mask, 0] = 0.0
         tip = self.tracking[0]
         if self.stop_device_at_tree_end and self.vessel_tree.at_tree_end(tip):
-            inserted_lengths = np.array(self.device_lengths_inserted.values())
 
             max_length = max(inserted_lengths)
             if max_length > 10:
@@ -149,7 +150,8 @@ class MultiDevice(Simulation3D):
                 Sofa.Gui.GUIManager.SetDimension(720, 720)
                 Sofa.Gui.GUIManager.MainLoop(self.root)
 
-        inserted_lengths = self.device_lengths_inserted
+        inserted_lengths = np.array(list(self.device_lengths_inserted.values()))
+
         max_id = np.argmax(inserted_lengths)
         new_length = inserted_lengths + action[:, 0] / self.image_frequency
         new_max_id = np.argmax(new_length)
@@ -187,12 +189,13 @@ class MultiDevice(Simulation3D):
         self._load_plugins()
         self.root.gravity = [0.0, 0.0, 0.0]
         self.root.dt = self.dt_simulation
-        self._add_visual()
         self._basic_setup()
         self._add_vessel_tree(mesh_path=mesh_path)
         self._add_device(
             insertion_point=insertion_point, insertion_direction=insertion_direction
         )
+        if self.init_visual:
+            self._add_visual()
 
     def _load_plugins(self):
         self.root.addObject("RequiredPlugin", name="SofaUserInteraction")
@@ -210,7 +213,58 @@ class MultiDevice(Simulation3D):
         self.root.addObject("RequiredPlugin", name="SofaTopologyMapping")
 
     def _add_visual(self):
-        ...
+        self.vessel_object.addObject(
+            "OglModel",
+            src="@meshLoader",
+            color=[0.5, 1.0, 1.0, 0.3],
+        )
+
+        for device in self.devices:
+            visu_node = self.instrument_combined.addChild("Visu_" + device.name)
+            visu_node.activated = True
+            visu_node.addObject("MechanicalObject", name="Quads")
+            visu_node.addObject(
+                "QuadSetTopologyContainer", name="Container_" + device.name
+            )
+            visu_node.addObject("QuadSetTopologyModifier", name="Modifier")
+            visu_node.addObject(
+                "QuadSetGeometryAlgorithms",
+                name="GeomAlgo",
+                template="Vec3d",
+            )
+            mesh_lines = "@../../topolines_" + device.name + "/meshLines_" + device.name
+            visu_node.addObject(
+                "Edge2QuadTopologicalMapping",
+                nbPointsOnEachCircle=10,
+                radius=device.radius,
+                flipNormals="true",
+                input=mesh_lines,
+                output="@Container_" + device.name,
+            )
+            visu_node.addObject(
+                "AdaptiveBeamMapping",
+                interpolation="@../Interpol_" + device.name,
+                name="VisuMap_" + device.name,
+                output="@Quads",
+                isMechanical="false",
+                input="@../DOFs",
+                useCurvAbs="1",
+                printLog="0",
+            )
+            visu_ogl = visu_node.addChild("VisuOgl")
+            visu_ogl.activated = True
+            visu_ogl.addObject(
+                "OglModel",
+                color=device.color,
+                quads="@../Container_" + device.name + ".quads",
+                material="texture Ambient 1 0.2 0.2 0.2 0.0 Diffuse 1 1.0 1.0 1.0 1.0 Specular 1 1.0 1.0 1.0 1.0 Emissive 0 0.15 0.05 0.05 0.0 Shininess 1 20",
+                name="Visual",
+            )
+            visu_ogl.addObject(
+                "IdentityMapping",
+                input="@../Quads",
+                output="@Visual",
+            )
 
     def _basic_setup(self):
         self.root.addObject("FreeMotionAnimationLoop")
@@ -255,11 +309,7 @@ class MultiDevice(Simulation3D):
 
         vessel_object.addObject("TriangleCollisionModel", moving=False, simulated=False)
         vessel_object.addObject("LineCollisionModel", moving=False, simulated=False)
-        vessel_object.addObject(
-            "OglModel",
-            src="@meshLoader",
-            color=[0.5, 1.0, 1.0, 0.3],
-        )
+        self.vessel_object = vessel_object
 
     def _add_device(self, insertion_point, insertion_direction):
 
@@ -408,53 +458,7 @@ class MultiDevice(Simulation3D):
         )
         beam_collis.addObject("LineCollisionModel", proximity=0.0, group=1)
         beam_collis.addObject("PointCollisionModel", proximity=0.0, group=1)
-
-        for device in self.devices:
-            visu_node = instrument_combined.addChild("Visu_" + device.name)
-            visu_node.activated = True
-            visu_node.addObject("MechanicalObject", name="Quads")
-            visu_node.addObject(
-                "QuadSetTopologyContainer", name="Container_" + device.name
-            )
-            visu_node.addObject("QuadSetTopologyModifier", name="Modifier")
-            visu_node.addObject(
-                "QuadSetGeometryAlgorithms",
-                name="GeomAlgo",
-                template="Vec3d",
-            )
-            mesh_lines = "@../../topolines_" + device.name + "/meshLines_" + device.name
-            visu_node.addObject(
-                "Edge2QuadTopologicalMapping",
-                nbPointsOnEachCircle=10,
-                radius=device.radius,
-                flipNormals="true",
-                input=mesh_lines,
-                output="@Container_" + device.name,
-            )
-            visu_node.addObject(
-                "AdaptiveBeamMapping",
-                interpolation="@../Interpol_" + device.name,
-                name="VisuMap_" + device.name,
-                output="@Quads",
-                isMechanical="false",
-                input="@../DOFs",
-                useCurvAbs="1",
-                printLog="0",
-            )
-            visu_ogl = visu_node.addChild("VisuOgl")
-            visu_ogl.activated = True
-            visu_ogl.addObject(
-                "OglModel",
-                color=device.color,
-                quads="@../Container_" + device.name + ".quads",
-                material="texture Ambient 1 0.2 0.2 0.2 0.0 Diffuse 1 1.0 1.0 1.0 1.0 Specular 1 1.0 1.0 1.0 1.0 Emissive 0 0.15 0.05 0.05 0.0 Shininess 1 20",
-                name="Visual",
-            )
-            visu_ogl.addObject(
-                "IdentityMapping",
-                input="@../Quads",
-                output="@Visual",
-            )
+        self.instrument_combined = instrument_combined
         self.device_trackings = []
         for device in self.devices:
             mesh_lines = "@../../topolines_" + device.name + "/meshLines_" + device.name
