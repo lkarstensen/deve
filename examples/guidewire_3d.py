@@ -15,7 +15,7 @@ import eve.visualisation
 #     omit_axis="y",
 # )
 vessel_tree = eve.vesseltree.VMR(
-    "/Users/lennartkarstensen/stacie/eve/eve/vesseltree/data/vmr/0095_0001/",
+    "/Users/lennartkarstensen/stacie/eve/eve/vesseltree/data/vmr/0094_0001/",
     -10,
     -2,
     rotate_yzx_deg=[0, 110, 8],
@@ -118,9 +118,9 @@ while True:
     if keys_pressed[pygame.K_ESCAPE]:
         break
     if keys_pressed[pygame.K_UP]:
-        trans += 50
+        trans += 25
     if keys_pressed[pygame.K_DOWN]:
-        trans -= 50
+        trans -= 25
     if keys_pressed[pygame.K_LEFT]:
         rot += 1 * 3.14
     if keys_pressed[pygame.K_RIGHT]:

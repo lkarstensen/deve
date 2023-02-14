@@ -78,6 +78,13 @@ class Guidewire(Simulation3D):
 
     def step(self, action: np.ndarray) -> None:
         action = np.array(action).reshape(self.action_space.shape)
+        action = np.clip(action, -self.velocity_limits, self.velocity_limits)
+        if (
+            self.device_lengths_inserted[self.device]
+            + action[0, 0] / self.image_frequency
+            <= 0.0
+        ):
+            action[0, 0] = 0.0
         tip = self.tracking[0]
         if (
             self.stop_device_at_tree_end
@@ -86,7 +93,6 @@ class Guidewire(Simulation3D):
             and self.device_lengths_inserted[self.device] > 10
         ):
             action[0, 0] = 0.0
-        action = np.clip(action, -self.velocity_limits, self.velocity_limits)
         self.last_action = action
         for _ in range(int((1 / self.image_frequency) / self.dt_simulation)):
             self._do_sofa_step(action)
@@ -124,11 +130,11 @@ class Guidewire(Simulation3D):
         self._sofa_initialized = False
 
     def _do_sofa_step(self, action):
-        trans = action[0, 0]
-        rot = action[0, 1]
         if not self.sofa_initialized_2:
             Sofa.Simulation.init(self.root)
             self.sofa_initialized_2 = True
+        trans = action[0, 0]
+        rot = action[0, 1]
         tip = self._beam_mechanics.DeployController.xtip
         tip[0] += float(trans * self.root.dt.value)
         self._beam_mechanics.DeployController.xtip = tip
@@ -144,7 +150,7 @@ class Guidewire(Simulation3D):
             self.sofa_initialized_2 = True
 
         xtip = self._beam_mechanics.DeployController.xtip.value
-        self._beam_mechanics.DeployController.xtip.value = xtip * 0.0
+        self._beam_mechanics.DeployController.xtip.value = xtip * 0.1
         rotInstr = self._beam_mechanics.DeployController.rotationInstrument.value
         self._beam_mechanics.DeployController.rotationInstrument.value = rotInstr * 0.0
         self._beam_mechanics.DeployController.indexFirstNode.value = 0
@@ -300,6 +306,7 @@ class Guidewire(Simulation3D):
         topo_lines.addObject(
             "WireRestShape",
             name=rest_shape_name,
+            isAProceduralShape=self.device.is_a_procedural_shape,
             straightLength=self.device.straight_length,
             length=self.device.length,
             spireDiameter=self.device.spire_diameter,
@@ -339,12 +346,12 @@ class Guidewire(Simulation3D):
             nx=nx,
             ny=1,
             nz=1,
-            xmax=0.0,
+            xmax=1.0,
             xmin=0.0,
             ymin=0,
             ymax=0,
-            zmax=0,
-            zmin=0,
+            zmax=1,
+            zmin=1,
             p0=[0, 0, 0],
         )
         beam_mechanics.addObject(
@@ -363,7 +370,7 @@ class Guidewire(Simulation3D):
         beam_mechanics.addObject(
             "AdaptiveBeamForceFieldAndMass",
             name="BeamForceField",
-            massDensity=0.00000155,
+            massDensity=self.device.mass_density,
             interpolation="@BeamInterpolation",
         )
 

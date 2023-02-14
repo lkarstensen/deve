@@ -6,8 +6,15 @@ import eve.visualisation
 import pygame
 from time import perf_counter
 
-vessel_tree = eve.vesseltree.AorticArch(scale_xyzd=[1.0, 1.0, 1.5, 1.0], seed=15)
-device = eve.simulation3d.device.JWire(visu_edges_per_mm=0.5)
+# vessel_tree = eve.vesseltree.AorticArch(scale_xyzd=[1.0, 1.0, 1.5, 1.0], seed=15)
+vessel_tree = eve.vesseltree.VMR(
+    "/Users/lennartkarstensen/stacie/eve/eve/vesseltree/data/vmr/0094_0001/",
+    -10,
+    -1,
+    rotate_yzx_deg=[0, 110, 8],
+)
+
+device = eve.simulation3d.device.JWire()
 device2 = eve.simulation3d.device.JWire(
     name="cath",
     visu_edges_per_mm=0.5,
@@ -28,12 +35,10 @@ target = eve.target.CenterlineRandom(vessel_tree, simulation, threshold=10)
 success = eve.success.TargetReached(target)
 pathfinder = eve.pathfinder.BruteForceBFS(vessel_tree, simulation, target)
 
-position = eve.observation.Tracking(simulation, n_points=5)
+position = eve.observation.Tracking(simulation, n_points=2)
 position = eve.observation.wrapper.RelativeToFirstRow(position)
-position = eve.observation.wrapper.CoordinatesTo2D(position, dim_to_delete="y")
 # position = eve.state.wrapper.Normalize(position)
 target_state = eve.observation.Target(target)
-target_state = eve.observation.wrapper.CoordinatesTo2D(target_state, dim_to_delete="y")
 # target_state = eve.state.wrapper.Normalize(target_state)
 rotation = eve.observation.Rotations(simulation)
 state = eve.observation.ObsDict(
@@ -68,6 +73,7 @@ env = eve.Env(
 r_cum = 0.0
 
 env.reset()
+print(simulation.instrument_combined.m_ircontroller.startingPos.value)
 last_tracking = None
 while True:
     start = perf_counter()
@@ -126,10 +132,16 @@ while True:
     s, r, d, i, success = env.step(action=action)
 
     if keys_pressed[pygame.K_RETURN]:
+        vessel_tree.insertion.direction = (
+            np.array([1, 0, 0]) + vessel_tree.insertion.direction
+        )
+        env.intervention.reset(force=True)
+        env.visualisation.reset()
         env.reset()
         n_steps = 0
     tracking = env.intervention.tracking_per_device
     tracking_2 = np.array(env.intervention.tracking)
+    print(simulation.instrument_combined.m_ircontroller.startingPos.value)
 
     # print(tracking[0][0:5])
     # print(len(env.simulation.tracking_per_device[0]))

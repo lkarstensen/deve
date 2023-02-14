@@ -63,3 +63,44 @@ class Simulation3D(Intervention, ABC):
         xyz0 = list(xyz0)
         pose = list(insertion_point) + list(xyz0) + [w0]
         return pose
+
+    def _calc_euler_angles(self, vector):
+        a = np.array([1, 0, 0])
+        a = a / np.linalg.norm(a)
+        b = vector
+        b = b / np.linalg.norm / b
+        v = np.cross(a, b)
+        vx = [
+            [0, -v[3], v[2]],
+            [v[3], 0, -v[1]],
+            [-v[2], v[1], 0],
+        ]
+        c = np.dot(a, b)
+        I = np.eye(3)
+        R = I + vx + vx**2 * (1 / (1 + c))
+        R = round(R, 5)
+        cos = np.cos
+        atan2 = np.arctan2
+        if R[3, 1] != 1 and R[3, 1] != -1:
+            theta_1 = -np.arcsin(R[3, 1])
+            theta_2 = np.pi - theta_1
+            chi_1 = np.arctan2((R[3, 2] / cos(theta_1)), (R[3, 3] / cos(theta_1)))
+            chi_2 = atan2((R[3, 2] / cos(theta_2)), (R[3, 3] / cos(theta_2)))
+            phi_1 = atan2((R[2, 1] / cos(theta_1)), (R[1, 1] / cos(theta_1)))
+            phi_2 = atan2((R[2, 1] / cos(theta_2)), (R[1, 1] / cos(theta_2)))
+            theta = min(theta_1, theta_2)
+            chi = min(chi_1, chi_2)
+            phi = min(phi_1, phi_2)
+        else:
+            phi = 0
+            if R[3, 1] == -1:
+                theta = np.pi / 2
+                chi = phi + atan2(R[1, 2], R[1, 3])
+            else:
+                theta = -np.pi / 2
+                chi = -phi + atan2(-R[1, 2], -R[1, 3])
+
+        theta = np.rad2deg(theta)
+        chi = np.rad2deg(chi)
+        phi = np.rad2deg(phi)
+        return theta, chi, phi

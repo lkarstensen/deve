@@ -91,12 +91,13 @@ class MultiDevice(Simulation3D):
     def step(self, action: np.ndarray) -> None:
         action = np.array(action).reshape(self.action_space.shape)
         action = np.clip(action, -self.velocity_limits, self.velocity_limits)
-        inserted_lengths = np.array(list(self.device_lengths_inserted.values()))
 
+        inserted_lengths = np.array(list(self.device_lengths_inserted.values()))
         mask = np.where(inserted_lengths + action[:, 0] / self.image_frequency <= 0.0)
         action[mask, 0] = 0.0
+
         tip = self.tracking[0]
-        if self.stop_device_at_tree_end and self.vessel_tree.at_tree_end(tip):
+        if self.vessel_tree.at_tree_end(tip) and self.stop_device_at_tree_end:
 
             max_length = max(inserted_lengths)
             if max_length > 10:
@@ -108,11 +109,11 @@ class MultiDevice(Simulation3D):
         self.last_action = action
 
         for _ in range(int((1 / self.image_frequency) / self.dt_simulation)):
-            self._do_sofa_step(action)
+            self._do_sofa_step(action, inserted_lengths)
 
-    def reset(self, episode_nr: int = 0, seed: int = None) -> None:
+    def reset(self, episode_nr: int = 0, seed: int = None, force: bool = False) -> None:
 
-        if self._loaded_mesh != self.vessel_tree.mesh_path:
+        if self._loaded_mesh != self.vessel_tree.mesh_path or force:
             ip_pos = self.vessel_tree.insertion.position
             ip_dir = self.vessel_tree.insertion.direction
             if self._sofa_initialized:
@@ -140,7 +141,7 @@ class MultiDevice(Simulation3D):
         Sofa.Simulation.unload(self.root)
         self.sofa_initialized_2 = False
 
-    def _do_sofa_step(self, action: np.ndarray):
+    def _do_sofa_step(self, action: np.ndarray, inserted_lengths: np.ndarray):
         if not self.sofa_initialized_2:
             Sofa.Simulation.init(self.root)
             self.sofa_initialized_2 = True
@@ -149,17 +150,15 @@ class MultiDevice(Simulation3D):
                 Sofa.Gui.GUIManager.createGUI(self.root, __file__)
                 Sofa.Gui.GUIManager.SetDimension(720, 720)
                 Sofa.Gui.GUIManager.MainLoop(self.root)
-
-        inserted_lengths = np.array(list(self.device_lengths_inserted.values()))
-
-        max_id = np.argmax(inserted_lengths)
-        new_length = inserted_lengths + action[:, 0] / self.image_frequency
-        new_max_id = np.argmax(new_length)
-        if max_id != new_max_id:
-            if abs(action[max_id, 0]) > abs(action[new_max_id, 0]):
-                action[new_max_id, 0] = 0.0
-            else:
-                action[max_id, 0] = 0.0
+        if len(self.devices) > 1:
+            max_id = np.argmax(inserted_lengths)
+            new_length = inserted_lengths + action[:, 0] / self.image_frequency
+            new_max_id = np.argmax(new_length)
+            if max_id != new_max_id:
+                if abs(action[max_id, 0]) > abs(action[new_max_id, 0]):
+                    action[new_max_id, 0] = 0.0
+                else:
+                    action[max_id, 0] = 0.0
 
         x_tip = self.instruments_combined.m_ircontroller.xtip
         tip_rot = self.instruments_combined.m_ircontroller.rotationInstrument
@@ -177,7 +176,7 @@ class MultiDevice(Simulation3D):
             self.sofa_initialized_2 = True
 
         x = self.instruments_combined.m_ircontroller.xtip.value
-        self.instruments_combined.m_ircontroller.xtip.value = x * 0.1
+        self.instruments_combined.m_ircontroller.xtip.value = x * 0.0
         ri = self.instruments_combined.m_ircontroller.rotationInstrument.value
         self.instruments_combined.m_ircontroller.rotationInstrument.value = ri * 0.0
         self.instruments_combined.m_ircontroller.indexFirstNode.value = 0
@@ -363,7 +362,7 @@ class MultiDevice(Simulation3D):
         )
         nx = 0
         for device in self.devices:
-            nx = sum([nx, sum(device.density_of_beams)])
+            nx = max([nx, sum(device.density_of_beams) + 1])
 
         instrument_combined.addObject(
             "RegularGridTopology",
@@ -379,12 +378,18 @@ class MultiDevice(Simulation3D):
             zmin=1,
             p0=[0, 0, 0],
         )
+
+        # rot_mat = self._rot_matrix_between_vectors(
+        #     np.array([1, 0, 0]), insertion_direction
+        # )
+        # euler = self._rot_mat_to_euler(rot_mat)
         instrument_combined.addObject(
             "MechanicalObject",
             showIndices=False,
             name="DOFs",
             template="Rigid3d",
-            ry=-90,
+            # rotation=euler,
+            # translation=insertion_point,
         )
         x_tip = []
         rotations = []
@@ -441,6 +446,8 @@ class MultiDevice(Simulation3D):
             points="@m_ircontroller.indexFirstNode",
             angularStiffness=1e8,
             stiffness=1e8,
+            external_points=0,
+            external_rest_shape="@DOFs",
         )
         self.instruments_combined = instrument_combined
 
@@ -456,61 +463,99 @@ class MultiDevice(Simulation3D):
             printLog=False,
             name="collisMap",
         )
-        beam_collis.addObject("LineCollisionModel", proximity=0.0, group=1)
-        beam_collis.addObject("PointCollisionModel", proximity=0.0, group=1)
+        beam_collis.addObject("LineCollisionModel", proximity=0.0)
+        beam_collis.addObject("PointCollisionModel", proximity=0.0)
         self.instrument_combined = instrument_combined
-        self.device_trackings = []
-        for device in self.devices:
-            mesh_lines = "@../../topolines_" + device.name + "/meshLines_" + device.name
+        # self.device_trackings = []
+        # for device in self.devices:
+        #     mesh_lines = "@../../topolines_" + device.name + "/meshLines_" + device.name
 
-            tracking_node = instrument_combined.addChild("tracking_" + device.name)
-            tracking_node.activated = True
-            if not device.is_a_procedural_shape:
-                tracking_node.addObject(
-                    "MeshObjLoader",
-                    filename=device.mesh_path,
-                    name="loader",
-                )
+        #     tracking_node = instrument_combined.addChild("tracking_" + device.name)
+        #     tracking_node.activated = True
+        #     if not device.is_a_procedural_shape:
+        #         tracking_node.addObject(
+        #             "MeshObjLoader",
+        #             filename=device.mesh_path,
+        #             name="loader",
+        #         )
 
-            tracking_node.addObject(
-                "WireRestShape",
-                name="rest_shape_" + device.name,
-                isAProceduralShape=device.is_a_procedural_shape,
-                straightLength=device.straight_length,
-                length=device.length,
-                spireDiameter=device.spire_diameter,
-                radiusExtremity=device.radius_extremity,
-                youngModulusExtremity=device.young_modulus_extremity,
-                massDensityExtremity=device.mass_density_extremity,
-                radius=device.radius,
-                youngModulus=device.young_modulus,
-                massDensity=device.mass_density,
-                poissonRatio=device.poisson_ratio,
-                keyPoints=device.key_points,
-                densityOfBeams=device.density_of_beams,
-                numEdgesCollis=device.num_edges_collis,
-                numEdges=int(device.length) + 1,
-                spireHeight=device.spire_height,
-                printLog=True,
-                template="Rigid3d",
-            )
+        #     tracking_node.addObject(
+        #         "WireRestShape",
+        #         name="rest_shape_" + device.name,
+        #         isAProceduralShape=device.is_a_procedural_shape,
+        #         straightLength=device.straight_length,
+        #         length=device.length,
+        #         spireDiameter=device.spire_diameter,
+        #         radiusExtremity=device.radius_extremity,
+        #         youngModulusExtremity=device.young_modulus_extremity,
+        #         massDensityExtremity=device.mass_density_extremity,
+        #         radius=device.radius,
+        #         youngModulus=device.young_modulus,
+        #         massDensity=device.mass_density,
+        #         poissonRatio=device.poisson_ratio,
+        #         keyPoints=device.key_points,
+        #         densityOfBeams=device.density_of_beams,
+        #         numEdgesCollis=device.num_edges_collis,
+        #         numEdges=int(device.length) + 1,
+        #         spireHeight=device.spire_height,
+        #         printLog=True,
+        #         template="Rigid3d",
+        #     )
 
-            tracking_node.addObject("EdgeSetTopologyContainer", name="tracking_lines")
-            tracking_node.addObject("EdgeSetTopologyModifier", name="Modifier")
-            tracking_node.addObject(
-                "EdgeSetGeometryAlgorithms", name="GeomAlgo", template="Rigid3d"
-            )
-            tracking_dof = tracking_node.addObject(
-                "MechanicalObject", name="TrackingDOFs", template="Rigid3d"
-            )
-            tracking_node.addObject(
-                "AdaptiveBeamMapping",
-                interpolation="@../Interpol_" + device.name,
-                name="TrackingMap",
-                output="@TrackingDOFs",
-                isMechanical="false",
-                input="@../DOFs",
-                useCurvAbs="1",
-                printLog="0",
-            )
-            self.device_trackings.append(tracking_dof)
+        #     tracking_node.addObject("EdgeSetTopologyContainer", name="tracking_lines")
+        #     tracking_node.addObject("EdgeSetTopologyModifier", name="Modifier")
+        #     tracking_node.addObject(
+        #         "EdgeSetGeometryAlgorithms", name="GeomAlgo", template="Rigid3d"
+        #     )
+        #     tracking_dof = tracking_node.addObject(
+        #         "MechanicalObject", name="TrackingDOFs", template="Rigid3d"
+        #     )
+        #     tracking_node.addObject(
+        #         "AdaptiveBeamMapping",
+        #         interpolation="@../Interpol_" + device.name,
+        #         name="TrackingMap",
+        #         output="@TrackingDOFs",
+        #         isMechanical="false",
+        #         input="@../DOFs",
+        #         useCurvAbs="1",
+        #         printLog="0",
+        #     )
+        #     self.device_trackings.append(tracking_dof)
+
+    def _rot_matrix_between_vectors(self, vector0, vector1):
+        vector1 = vector1 / np.linalg.norm(vector1)
+        vector0 = vector0 / np.linalg.norm(vector0)
+
+        v = np.cross(vector0, vector1)
+        s = np.linalg.norm(v)
+        vx = np.array(
+            [
+                [0, -v[2], v[1]],
+                [v[2], 0, -v[0]],
+                [-v[1], v[0], 0],
+            ]
+        )
+        c = np.dot(vector0, vector1)
+        I = np.eye(3)
+        R = I + vx + np.matmul(vx, vx) * ((1 - c) / s**2)
+        return R
+
+    def _rot_mat_to_euler(self, rot_mat):
+
+        sy = np.sqrt(rot_mat[0, 0] * rot_mat[0, 0] + rot_mat[1, 0] * rot_mat[1, 0])
+
+        singular = sy < 1e-6
+
+        if not singular:
+            x = np.arctan2(rot_mat[2, 1], rot_mat[2, 2])
+            y = np.arctan2(-rot_mat[2, 0], sy)
+            z = np.arctan2(rot_mat[1, 0], rot_mat[0, 0])
+        else:
+            x = np.arctan2(-rot_mat[1, 2], rot_mat[1, 1])
+            y = np.arctan2(-rot_mat[2, 0], sy)
+            z = 0
+
+        x = np.rad2deg(x)
+        y = np.rad2deg(y)
+        z = np.rad2deg(z)
+        return np.array([x, y, z])

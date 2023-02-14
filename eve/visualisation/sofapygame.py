@@ -101,17 +101,6 @@ class SofaPygame(Visualisation):
 
     def reset(self, episode_nr: int = 0) -> None:
 
-        targets = list(self._interim_target_spheres.keys())
-        for target in targets:
-            sphere = self._interim_target_spheres.pop(target)
-            self._interim_targets_node.removeChild(sphere)
-        if self.intervention.initialized_last_reset:
-            self._main_target = None
-        if self._main_target is not None:
-            target_coord = self.target.coordinates.tolist()
-            self._main_target.ball.translation = target_coord
-            Sofa.Simulation.init(self._main_target)
-
         if not self._initialized or self.intervention.initialized_last_reset:
             self._interim_target_spheres = {}
             self.intervention.root.addObject("RequiredPlugin", name="SofaGeneralLoader")
@@ -127,49 +116,6 @@ class SofaPygame(Visualisation):
             )
             self._interim_targets_node.addObject("MechanicalObject", src="@loader")
 
-        for i, interim_target in enumerate(self.interim_target.all_coordinates):
-            interim_target = tuple(interim_target)
-            target_node = self._interim_targets_node.addChild("target_" + str(i))
-
-            target_node.addObject(
-                "OglModel",
-                src="@../loader",
-                color=[0.5, 1.0, 1.0, 0.3],
-                translation=interim_target,
-            )
-            self._interim_target_spheres[interim_target] = target_node
-
-        if self.target is not None and self._main_target is None:
-            target_coord = tuple(self.target.coordinates)
-
-            target_node = self.intervention.root.addChild("main_target")
-            target_node.addObject(
-                "MeshSTLLoader",
-                name="loader",
-                triangulate=True,
-                filename="/Users/lennartkarstensen/stacie/eve/eve/visualisation/meshes/unit_sphere.stl",
-                scale=self.target.threshold,
-            )
-            target_node.addObject(
-                "MechanicalObject",
-                src="@loader",
-                translation=(
-                    target_coord[0],
-                    target_coord[1],
-                    target_coord[2] - self.target.threshold,
-                ),
-                template="Rigid3d",
-                name="ball",
-            )
-            target_node.addObject(
-                "OglModel",
-                src="@loader",
-                color=[0.5, 0.0, 0.0, 0.7],
-                # translation=target_coord,
-                name="ogl_model",
-            )
-            target_node.addObject("RigidMapping", input="@ball")
-            self._main_target = target_node
         if not self._initialized or self.intervention.initialized_last_reset:
             self.intervention.root.addObject(
                 "RequiredPlugin", name="SofaOpenglVisual"
